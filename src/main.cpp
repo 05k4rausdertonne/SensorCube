@@ -115,9 +115,6 @@ String readMFRC522(String type)
 
         if(mfrc522.PICC_ReadCardSerial()) { // true, if RFID tag/card was read
             
-
-            Serial.print("RFID TAG ID:");
-            
             for (byte i = 0; i < mfrc522.uid.size; ++i) { // read id (in parts)
             
             value.concat(String(mfrc522.uid.uidByte[i], HEX)); // print id as hex values
@@ -229,7 +226,8 @@ String serializeConfig()
 {
     DynamicJsonDocument doc(JSON_OBJECT_SIZE(globalArgs.size() 
         + JSON_ARRAY_SIZE(sensors.size())
-        + sensors.size() * JSON_OBJECT_SIZE(2)));
+        + sensors.size() * JSON_OBJECT_SIZE(2))
+        + JSON_ARRAY_SIZE(1));
 
     for (std::map<String, String>::iterator it = globalArgs.begin(); it != globalArgs.end(); it++)
     {
@@ -240,9 +238,11 @@ String serializeConfig()
 
     for (std::map<String, sensor>::iterator it = sensors.begin(); it != sensors.end(); it++)
     {
-        doc["sensors"][distance(sensors.begin(), it)] = it->first;
+        doc["sensors"][distance(sensors.begin(), it)]["type"] = it->first;
         doc["sensors"][distance(sensors.begin(), it)]["scanInterval"] = it->second.scanInterval;
     }
+
+    doc.createNestedArray("actuators");
 
     String response;
 
@@ -256,7 +256,8 @@ String serializeConfig()
 // request callback for root
 void handleRootRequest()
 {
-    Serial.println("request incomming");
+    Serial.print("request incomming: ");
+    Serial.println(server.arg("plain"));
 
     if (server.method() != HTTP_POST) 
     {
@@ -264,7 +265,7 @@ void handleRootRequest()
     }
     else 
     {
-        StaticJsonDocument<128> doc;
+        StaticJsonDocument<256> doc;
         deserializeJson(doc, server.arg("plain"));
         
         for (std::map<String, String>::iterator it = globalArgs.begin(); it != globalArgs.end(); it++)
@@ -274,6 +275,12 @@ void handleRootRequest()
                 Serial.print("Arg " + it->first + " set from " + it->second + " to ");
                 
                 globalArgs.at(it->first) = (String)doc[it->first];
+
+                mqttClient.disconnect();
+
+                mqttClient.setServer(globalArgs.find("address")->second.c_str(), 1883);
+                
+                // reconnectMQTT();
                 
                 Serial.println(it->second);                
             }
@@ -381,6 +388,7 @@ void loop()
     if (!mqttClient.connected())
     {
         reconnectMQTT();
+        return;
     }
     mqttClient.loop();
 
