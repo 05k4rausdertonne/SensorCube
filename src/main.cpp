@@ -42,6 +42,7 @@ PubSubClient mqttClient(wifiClient);
 char* serverAddressMQTT = "broker.hivemq.com";
 
 // init global args with default parameters
+// TODO: add mqtt credentials
 std::map<String, String> globalArgs = {
     {"location", "tbd"},
     {"address", "broker.hivemq.com"},
