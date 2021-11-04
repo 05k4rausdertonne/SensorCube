@@ -44,6 +44,9 @@ Sensor* SensorManager::getSensorByName(String name)
 
 bool SensorManager::addSensor(Sensor sensor)
 {
+    Serial.println("sensor:");
+    Serial.println(sensor.getName());
+
     if(!getSensorByName(sensor.getName()))
     {
         sensors.push_back(sensor);

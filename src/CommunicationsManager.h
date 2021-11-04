@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include <PubSubClient.h>
-#include <ESP8266WiFi.h>
 #include <SensorManager.h>
 
 #define DEFAILT_MQTT_PORT 1883
@@ -17,9 +16,9 @@ class CommunicationsManager {
         void handleMessageMQTT(char*, byte*, unsigned int);
         void loop();
 
-        CommunicationsManager(WiFiClient, String, String, int, 
+        CommunicationsManager(PubSubClient*, char*, String, int, 
             std::function<void(char*, byte*, unsigned int)>);
-        CommunicationsManager(WiFiClient, String, String, 
+        CommunicationsManager(PubSubClient*, char*, String, 
             std::function<void(char*, byte*, unsigned int)>);
         CommunicationsManager();
 
@@ -33,13 +32,13 @@ class CommunicationsManager {
         
     private:
 
-        String clientID;
+        char* clientID;
         String location;
         char* serverAddress;
         int serverPort;
         char* userName;
         char* userPassword;
-        PubSubClient mqttClient;
+        PubSubClient* mqttClient;
 
         void reconnect();
 };

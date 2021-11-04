@@ -23,12 +23,20 @@
 // library for the conversion of json documents
 #include <ArduinoJson.h>
 
+// include own classes
+#include <SensorManager.h>
+#include <CommunicationsManager.h>
+#include <SensorRFID.h>
+
 // define connection pins
 #define RST_PIN         D0 
 #define SS_PIN          D8 
 
 // init Wifi
 WiFiClient wifiClient;
+
+// init PubSubClient
+PubSubClient pubSubClient(wifiClient);
 
 // init web server
 ESP8266WebServer  server(80);
@@ -50,117 +58,6 @@ std::map<String, String> globalArgs = {
     {"sealevelpressure", "1013.25"}
 };
 
-
-struct sensorChip
-{
-    bool async;
-    unsigned long scanEnd = 0;
-    bool scanning = false;
-    uint32_t (*startAsyncReading)();
-};
-
-sensorChip makeSensorChip(
-    bool async,
-    uint32_t (*startAsyncReading)()
-    )
-{
-    if (async)
-    {
-        return {
-        async,
-        0,
-        false,
-        startAsyncReading,
-        };
-    } 
-    else return {false};
-}
-
-sensorChip makeSensorChip(
-    bool async
-)    
-{
-    return {false};
-}
-
-struct sensor
-{
-    unsigned long lastScanned;
-    unsigned int scanInterval;
-    sensorChip* chip;
-    String (*readSensor)(String type);
-};
-
-sensor makeSensor(
-    unsigned int scanInterval,
-    sensorChip* chip,
-    String (*readSensor)(String type)
-    )
-{
-    return {
-        0,
-        scanInterval,
-        chip,
-        readSensor
-    };
-}
-
-// callback function for reading RFID tags
-String readMFRC522(String type)
-{
-    String value = "";
-
-    if (mfrc522.PICC_IsNewCardPresent())  // (true, if RFID tag/card is present ) PICC = Proximity Integrated Circuit Card
-    {
-        StaticJsonDocument<48> doc;
-
-        if(mfrc522.PICC_ReadCardSerial()) { // true, if RFID tag/card was read
-            
-            for (byte i = 0; i < mfrc522.uid.size; ++i) { // read id (in parts)
-            
-            value.concat(String(mfrc522.uid.uidByte[i], HEX)); // print id as hex values
-            }
-        }
-    }
-    return value;
-}
-
-//callback function for collecting readings from bme680
-String readBME680(String type)
-{   
-    String value; 
-
-    if(type ==  "temperature") value = (String)bme.temperature;
-    else if(type ==  "pressure") value = (String)bme.pressure;
-    else if(type ==  "humidity") value = (String)bme.humidity;
-    else if(type ==  "gas_resistance") value = (String)bme.gas_resistance;
-    else if(type ==  "altitude") value = (String)bme.readAltitude(globalArgs.at("sealevelpressure").toFloat());
-    
-    return value;
-}
-
-uint32_t startBME680()
-{
-    return bme.beginReading();
-}
-
-// MQTT client helper functions
-void reconnectMQTT()
-{   
-    Serial.println("attempting reconnect to MQTT broker..");
-    if (mqttClient.connect((char*)WiFi.macAddress().c_str()))
-    {
-        // mqttClient.publish("outTopic69","hello world");
-        Serial.println("reconnect successfull :)");
-
-        mqttClient.subscribe("inTopic69");
-    }
-    else
-    {
-        Serial.println("reconnect failed :(");
-    }
-}
-
 void handleMessageMQTT(char* topic, byte* payload, unsigned int length)
 {
     Serial.print("Message arrived [");
@@ -172,148 +69,267 @@ void handleMessageMQTT(char* topic, byte* payload, unsigned int length)
     Serial.println();
 }
 
-bool publishSensor(String payload, String sensorType)
-{
 
-    if(payload.equals(""))
-    {
-        return false;
-    }
+CommunicationsManager communicationsManager(&pubSubClient, 
+        (char*)WiFi.macAddress().c_str(), 
+        "broker.hivemq.com", 
+        handleMessageMQTT);
 
-    if (!mqttClient.connected())
-    {
-        reconnectMQTT();
-    }
+SensorManager sensorManager(&communicationsManager);
+
+// struct sensorChip
+// {
+//     bool async;
+//     unsigned long scanEnd = 0;
+//     bool scanning = false;
+//     uint32_t (*startAsyncReading)();
+// };
+
+// sensorChip makeSensorChip(
+//     bool async,
+//     uint32_t (*startAsyncReading)()
+//     )
+// {
+//     if (async)
+//     {
+//         return {
+//         async,
+//         0,
+//         false,
+//         startAsyncReading,
+//         };
+//     } 
+//     else return {false};
+// }
+
+// sensorChip makeSensorChip(
+//     bool async
+// )    
+// {
+//     return {false};
+// }
+
+// struct sensor
+// {
+//     unsigned long lastScanned;
+//     unsigned int scanInterval;
+//     sensorChip* chip;
+//     String (*readSensor)(String type);
+// };
+
+// sensor makeSensor(
+//     unsigned int scanInterval,
+//     sensorChip* chip,
+//     String (*readSensor)(String type)
+//     )
+// {
+//     return {
+//         0,
+//         scanInterval,
+//         chip,
+//         readSensor
+//     };
+// }
+
+// // callback function for reading RFID tags
+// String readMFRC522(String type)
+// {
+//     String value = "";
+
+//     if (mfrc522.PICC_IsNewCardPresent())  // (true, if RFID tag/card is present ) PICC = Proximity Integrated Circuit Card
+//     {
+//         StaticJsonDocument<48> doc;
+
+//         if(mfrc522.PICC_ReadCardSerial()) { // true, if RFID tag/card was read
+            
+//             for (byte i = 0; i < mfrc522.uid.size; ++i) { // read id (in parts)
+            
+//             value.concat(String(mfrc522.uid.uidByte[i], HEX)); // print id as hex values
+//             }
+//         }
+//     }
+//     return value;
+// }
+
+// //callback function for collecting readings from bme680
+// String readBME680(String type)
+// {   
+//     String value; 
+
+//     if(type ==  "temperature") value = (String)bme.temperature;
+//     else if(type ==  "pressure") value = (String)bme.pressure;
+//     else if(type ==  "humidity") value = (String)bme.humidity;
+//     else if(type ==  "gas_resistance") value = (String)bme.gas_resistance;
+//     else if(type ==  "altitude") value = (String)bme.readAltitude(globalArgs.at("sealevelpressure").toFloat());
+    
+//     return value;
+// }
+
+// uint32_t startBME680()
+// {
+//     return bme.beginReading();
+// }
+
+// // MQTT client helper functions
+// void reconnectMQTT()
+// {   
+//     Serial.println("attempting reconnect to MQTT broker..");
+//     if (mqttClient.connect((char*)WiFi.macAddress().c_str()))
+//     {
+//         // mqttClient.publish("outTopic69","hello world");
+//         Serial.println("reconnect successfull :)");
+
+//         mqttClient.subscribe("inTopic69");
+//     }
+//     else
+//     {
+//         Serial.println("reconnect failed :(");
+//     }
+// }
+
+
+// bool publishSensor(String payload, String sensorType)
+// {
+
+//     if(payload.equals(""))
+//     {
+//         return false;
+//     }
+
+//     if (!mqttClient.connected())
+//     {
+//         reconnectMQTT();
+//     }
 
     
 
-    String outTopic = "sensor/";
-    outTopic.concat(sensorType + "/");
-    outTopic.concat(globalArgs.find("uuid")->second + "/");
-    outTopic.concat(globalArgs.find("location")->second);
+//     String outTopic = "sensor/";
+//     outTopic.concat(sensorType + "/");
+//     outTopic.concat(globalArgs.find("uuid")->second + "/");
+//     outTopic.concat(globalArgs.find("location")->second);
 
-    if(mqttClient.publish(outTopic.c_str(), payload.c_str()))
-    {
-        Serial.println(outTopic);
-        Serial.println(payload);
-        return true;
-    }
-    else   
-    {
-        Serial.println("publish failed");
-        return false;
-    }
-}
+//     if(mqttClient.publish(outTopic.c_str(), payload.c_str()))
+//     {
+//         Serial.println(outTopic);
+//         Serial.println(payload);
+//         return true;
+//     }
+//     else   
+//     {
+//         Serial.println("publish failed");
+//         return false;
+//     }
+// }
 
 
-std::map<String, sensorChip> sensorChips =
-{
-    {"bme680", makeSensorChip(true, startBME680)},
-    {"mfrc522", makeSensorChip(false)}
-};
+// std::map<String, sensorChip> sensorChips =
+// {
+//     {"bme680", makeSensorChip(true, startBME680)},
+//     {"mfrc522", makeSensorChip(false)}
+// };
 
-// vector for storing sensors
-std::map<String, sensor> sensors =
-{
-    {"temperature", makeSensor(10000,&(sensorChips.at("bme680")), readBME680)},
-    {"pressure", makeSensor(10000,&(sensorChips.at("bme680")), readBME680)},
-    {"humidity", makeSensor(10000,&(sensorChips.at("bme680")), readBME680)},
-    {"gas_resistance", makeSensor(10000,&(sensorChips.at("bme680")), readBME680)},
-    {"altitude", makeSensor(10000,&(sensorChips.at("bme680")), readBME680)},
-    {"nfcID", makeSensor(500,&(sensorChips.at("mfrc522")), readMFRC522)}
-};
+// // vector for storing sensors
+// std::map<String, sensor> sensors =
+// {
+//     {"temperature", makeSensor(10000,&(sensorChips.at("bme680")), readBME680)},
+//     {"pressure", makeSensor(10000,&(sensorChips.at("bme680")), readBME680)},
+//     {"humidity", makeSensor(10000,&(sensorChips.at("bme680")), readBME680)},
+//     {"gas_resistance", makeSensor(10000,&(sensorChips.at("bme680")), readBME680)},
+//     {"altitude", makeSensor(10000,&(sensorChips.at("bme680")), readBME680)},
+//     {"nfcID", makeSensor(500,&(sensorChips.at("mfrc522")), readMFRC522)}
+// };
 
-String serializeConfig()
-{
-    DynamicJsonDocument doc(JSON_OBJECT_SIZE(globalArgs.size() 
-        + JSON_ARRAY_SIZE(sensors.size())
-        + sensors.size() * JSON_OBJECT_SIZE(2))
-        + JSON_ARRAY_SIZE(1));
+// String serializeConfig()
+// {
+//     DynamicJsonDocument doc(JSON_OBJECT_SIZE(globalArgs.size() 
+//         + JSON_ARRAY_SIZE(sensors.size())
+//         + sensors.size() * JSON_OBJECT_SIZE(2))
+//         + JSON_ARRAY_SIZE(1));
 
-    for (std::map<String, String>::iterator it = globalArgs.begin(); it != globalArgs.end(); it++)
-    {
-        doc[it->first] = it->second;
-    }
+//     for (std::map<String, String>::iterator it = globalArgs.begin(); it != globalArgs.end(); it++)
+//     {
+//         doc[it->first] = it->second;
+//     }
 
-    doc.createNestedArray("sensors");
+//     doc.createNestedArray("sensors");
 
-    for (std::map<String, sensor>::iterator it = sensors.begin(); it != sensors.end(); it++)
-    {
-        doc["sensors"][distance(sensors.begin(), it)]["type"] = it->first;
-        doc["sensors"][distance(sensors.begin(), it)]["scanInterval"] = it->second.scanInterval;
-    }
+//     for (std::map<String, sensor>::iterator it = sensors.begin(); it != sensors.end(); it++)
+//     {
+//         doc["sensors"][distance(sensors.begin(), it)]["type"] = it->first;
+//         doc["sensors"][distance(sensors.begin(), it)]["scanInterval"] = it->second.scanInterval;
+//     }
 
-    doc.createNestedArray("actuators");
+//     doc.createNestedArray("actuators");
 
-    String response;
+//     String response;
 
-    serializeJson(doc, response);
+//     serializeJson(doc, response);
 
-    Serial.println(response);
+//     Serial.println(response);
 
-    return response;
-}
+//     return response;
+// }
 
-// request callback for root
-void handleRootRequest()
-{
-    Serial.print("request incomming: ");
-    Serial.println(server.arg("plain"));
+// // request callback for root
+// void handleRootRequest()
+// {
+//     Serial.print("request incomming: ");
+//     Serial.println(server.arg("plain"));
 
-    if (server.method() != HTTP_POST) 
-    {
-        server.send (200, "text/json", serializeConfig());
-    }
-    else 
-    {
-        StaticJsonDocument<256> doc;
-        deserializeJson(doc, server.arg("plain"));
+//     if (server.method() != HTTP_POST) 
+//     {
+//         server.send (200, "text/json", serializeConfig());
+//     }
+//     else 
+//     {
+//         StaticJsonDocument<256> doc;
+//         deserializeJson(doc, server.arg("plain"));
         
-        for (std::map<String, String>::iterator it = globalArgs.begin(); it != globalArgs.end(); it++)
-        {
-            if (doc.containsKey(it->first))
-            {
-                Serial.print("Arg " + it->first + " set from " + it->second + " to ");
+//         for (std::map<String, String>::iterator it = globalArgs.begin(); it != globalArgs.end(); it++)
+//         {
+//             if (doc.containsKey(it->first))
+//             {
+//                 Serial.print("Arg " + it->first + " set from " + it->second + " to ");
                 
-                globalArgs.at(it->first) = (String)doc[it->first];
+//                 globalArgs.at(it->first) = (String)doc[it->first];
 
-                mqttClient.disconnect();
+//                 mqttClient.disconnect();
 
-                mqttClient.setServer(globalArgs.find("address")->second.c_str(), 1883);
+//                 mqttClient.setServer(globalArgs.find("address")->second.c_str(), 1883);
                 
-                // reconnectMQTT();
+//                 // reconnectMQTT();
                 
-                Serial.println(it->second);                
-            }
-        }
-        server.send(200, "text/plain", serializeConfig());
-    }
-}
+//                 Serial.println(it->second);                
+//             }
+//         }
+//         server.send(200, "text/plain", serializeConfig());
+//     }
+// }
 
-// request callback for sensor config
-void handleSensorRequest()
-{
-    if (server.method() != HTTP_POST) 
-    {
-        server.send (200, "text/json", serializeConfig());
-    }
-    else 
-    {
-        StaticJsonDocument<128> doc;
-        deserializeJson(doc, server.arg("plain"));
+// // request callback for sensor config
+// void handleSensorRequest()
+// {
+//     if (server.method() != HTTP_POST) 
+//     {
+//         server.send (200, "text/json", serializeConfig());
+//     }
+//     else 
+//     {
+//         StaticJsonDocument<128> doc;
+//         deserializeJson(doc, server.arg("plain"));
         
-        for (std::map<String, sensor>::iterator it = sensors.begin(); it != sensors.end(); it++)
-        {
-            if (doc.containsKey(it->first) 
-                && doc[it->first].containsKey("scanInterval"))
-            {
-                it->second.scanInterval = doc[it->first]["scanInterval"];
-            }
-        }
+//         for (std::map<String, sensor>::iterator it = sensors.begin(); it != sensors.end(); it++)
+//         {
+//             if (doc.containsKey(it->first) 
+//                 && doc[it->first].containsKey("scanInterval"))
+//             {
+//                 it->second.scanInterval = doc[it->first]["scanInterval"];
+//             }
+//         }
 
-        server.send(200, "text/json", serializeConfig());
-    }
-}
+//         server.send(200, "text/json", serializeConfig());
+//     }
+// }
 
 // callback for not found
 void handleNotFound()
@@ -338,7 +354,7 @@ void setup()
     Serial.println("Could not find a valid BME680 sensor, check wiring!");
     }
 
-    //init WiFi connection
+    // init WiFi connection
     WiFi.mode(WIFI_STA); // explicitly set mode, esp defaults to STA+AP
     
     WiFiManager wifiManager;
@@ -347,10 +363,6 @@ void setup()
     Serial.println();
     Serial.print("MAC: ");
     Serial.println(WiFi.macAddress());
-
-    // configure mqtt connection
-    mqttClient.setCallback(handleMessageMQTT);
-    mqttClient.setServer(globalArgs.find("address")->second.c_str(), 1883);
 
     // init RFID shield
     SPI.begin();			// Init SPI bus
@@ -361,18 +373,7 @@ void setup()
     Serial.print("RFID tag reader ");
     mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
 
-    // Set up bme680 oversampling and filter initialization
-    bme.setTemperatureOversampling(BME680_OS_8X);
-    bme.setHumidityOversampling(BME680_OS_2X);
-    bme.setPressureOversampling(BME680_OS_4X);
-    bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
-    bme.setGasHeater(320, 150); // 320*C for 150 ms
-
-    server.on("/", handleRootRequest);
-    server.on("/sensor", handleSensorRequest);
-    server.onNotFound(handleNotFound);
-
-    server.begin();
+    sensorManager.addSensor(SensorRFID("nfcID", 500, &mfrc522));
 
     delay(50);
 }
@@ -383,50 +384,8 @@ void setup()
 //
 // ---------------------------
 void loop()
-{   
-    server.handleClient();
-    // handle MQTT client
-    if (!mqttClient.connected())
-    {
-        reconnectMQTT();
-        return;
-    }
-    mqttClient.loop();
-
-    if(millis() > bmeScan)
-    {
-        bmeScan = bme.beginReading();
-        if (bmeScan == 0) 
-        {
-            Serial.println(F("Failed to begin reading :("));
-        }
-    }
-
-    // loop over sensors and check if any need to be read, 
-    // or async operations need to be started or finished
-
-    for (std::map<String, sensorChip>::iterator it = sensorChips.begin(); it != sensorChips.end(); it++)
-    {
-        if(it->second.async && millis() > it->second.scanEnd)
-        {
-            it->second.scanEnd = it->second.startAsyncReading();
-            if (it->second.scanEnd == 0) 
-            {
-                Serial.println(F("Failed to begin reading :("));
-            }
-        }
-    }
-
-    for (std::map<String, sensor>::iterator it = sensors.begin(); it != sensors.end(); it++)
-    {
-        if(millis() - it->second.lastScanned > it->second.scanInterval)
-        {
-            publishSensor(it->second.readSensor(it->first), it->first);
-                
-            it->second.lastScanned = millis();
-        }
-    }
+{
+    sensorManager.loop();
+    // TODO see why exception gets thrown here
+    // communicationsManager.loop();
 }
-
-
-

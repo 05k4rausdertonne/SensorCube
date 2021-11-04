@@ -1,14 +1,14 @@
 
 #include <CommunicationsManager.h>
 
-CommunicationsManager::CommunicationsManager(WiFiClient wifiClient, String id, 
+CommunicationsManager::CommunicationsManager(PubSubClient* client, char* id, 
     String address, int port,
     std::function<void(char*, byte*, unsigned int)> messageCallbackMQTT)
 {
     
-    mqttClient = PubSubClient(wifiClient);
+    mqttClient = client;
 
-    mqttClient.setCallback(messageCallbackMQTT);
+    mqttClient->setCallback(messageCallbackMQTT);
 
     clientID = id;
 
@@ -16,17 +16,17 @@ CommunicationsManager::CommunicationsManager(WiFiClient wifiClient, String id,
 
 }
 
-CommunicationsManager::CommunicationsManager(WiFiClient wifiClient, String id, String address,
+CommunicationsManager::CommunicationsManager(PubSubClient* client, char* id, String address,
     std::function<void(char*, byte*, unsigned int)> messageCallbackMQTT)
 {
-    CommunicationsManager(wifiClient, id, address, DEFAILT_MQTT_PORT, messageCallbackMQTT);
+    CommunicationsManager(client, id, address, DEFAILT_MQTT_PORT, messageCallbackMQTT);
 }
 
 void CommunicationsManager::setServer(char* addr, int port)
 {
     serverAddress = addr;
     serverPort = port;
-    mqttClient.setServer(addr, port);
+    mqttClient->setServer(addr, port);
     Serial.println("new address: " + (String)addr + ":" + port);
 }
 
@@ -48,18 +48,20 @@ void CommunicationsManager::setLocation(String loc)
 
 bool CommunicationsManager::publishSensor(String payload, String sensorType)
 {
-    if (!mqttClient.connected())
+    if (!mqttClient->connected())
     {
         reconnect();
     }
 
     String outTopic = "sensor/";
     outTopic.concat(sensorType + "/");
-    outTopic.concat(clientID + "/");
+    outTopic.concat((String)clientID + "/");
     outTopic.concat(location);
 
-    if(mqttClient.publish(outTopic.c_str(), payload.c_str()))
+    if(mqttClient->publish(outTopic.c_str(), payload.c_str()))
     {
+        Serial.println(outTopic);
+        Serial.println(payload);
         return true;
     }
     else   
@@ -87,16 +89,17 @@ void CommunicationsManager::handleMessageMQTT(char* topic, byte* payload, unsign
 
 void CommunicationsManager::loop()
 {
-    if (!mqttClient.connected())
+    Serial.println("looping communications");
+    if (!mqttClient->connected())
     {
         reconnect();
     }
-    mqttClient.loop();
+    mqttClient->loop();
 }
 
 void CommunicationsManager::reconnect()
 {
-    if (mqttClient.connect((char*)WiFi.macAddress().c_str()))
+    if (mqttClient->connect(clientID))
     {
         // mqttClient.publish("outTopic69","hello world");
 
