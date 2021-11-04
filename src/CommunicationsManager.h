@@ -6,21 +6,29 @@
 #include <ESP8266WiFi.h>
 #include <SensorManager.h>
 
+#define DEFAILT_MQTT_PORT 1883
+
 class CommunicationsManager {
 
     public:
 
         bool subscribeActuator();
-        bool publishSensor(String payload, String sensorName);
+        bool publishSensor(String, String);
         void handleMessageMQTT(char*, byte*, unsigned int);
         void loop();
 
-        CommunicationsManager(WiFiClient, String, std::function<void(char*, byte*, unsigned int)>);
+        CommunicationsManager(WiFiClient, String, String, int, 
+            std::function<void(char*, byte*, unsigned int)>);
+        CommunicationsManager(WiFiClient, String, String, 
+            std::function<void(char*, byte*, unsigned int)>);
         CommunicationsManager();
 
-        void setServerAddress(char* sAddr);
-        void setLocation(String loc);
-        void setMQTTPort(char* mqttPort);
+        void setServer(char*, int);
+        void setServer(int);
+        void setServer(char*);
+        void setLocation(String);
+        void setMQTTPort(char*);
+        void setMQTTCredentials(char*, char*);
 
         
     private:
@@ -28,6 +36,9 @@ class CommunicationsManager {
         String clientID;
         String location;
         char* serverAddress;
+        int serverPort;
+        char* userName;
+        char* userPassword;
         PubSubClient mqttClient;
 
         void reconnect();

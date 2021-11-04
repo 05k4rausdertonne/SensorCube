@@ -1,7 +1,8 @@
 
 #include <CommunicationsManager.h>
 
-CommunicationsManager::CommunicationsManager(WiFiClient wifiClient, String id,
+CommunicationsManager::CommunicationsManager(WiFiClient wifiClient, String id, 
+    String address, int port,
     std::function<void(char*, byte*, unsigned int)> messageCallbackMQTT)
 {
     
@@ -15,11 +16,28 @@ CommunicationsManager::CommunicationsManager(WiFiClient wifiClient, String id,
 
 }
 
-
-void CommunicationsManager::setServerAddress(char* sAddr)
+CommunicationsManager::CommunicationsManager(WiFiClient wifiClient, String id, String address,
+    std::function<void(char*, byte*, unsigned int)> messageCallbackMQTT)
 {
-    serverAddress = sAddr;
-    mqttClient.setServer(serverAddress, 1883);
+    CommunicationsManager(wifiClient, id, address, DEFAILT_MQTT_PORT, messageCallbackMQTT);
+}
+
+void CommunicationsManager::setServer(char* addr, int port)
+{
+    serverAddress = addr;
+    serverPort = port;
+    mqttClient.setServer(addr, port);
+    Serial.println("new address: " + (String)addr + ":" + port);
+}
+
+void CommunicationsManager::setServer(int port)
+{
+    setServer(serverAddress, port);
+}
+
+void CommunicationsManager::setServer(char* addr)
+{
+    setServer(addr, serverPort);
 }
 
 void CommunicationsManager::setLocation(String loc)
