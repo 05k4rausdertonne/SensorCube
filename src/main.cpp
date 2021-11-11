@@ -45,6 +45,9 @@ char* serverAddressMQTT = "broker.hivemq.com";
 std::map<String, String> globalArgs = {
     {"location", "tbd"},
     {"address", "broker.hivemq.com"},
+    {"port", "1883"},
+    {"username", "tbd"},
+    {"password", "tbd"},
     {"uuid", "tbd"},
     {"sealevelpressure", "1013.25"}
 };
