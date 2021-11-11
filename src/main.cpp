@@ -47,7 +47,6 @@ Adafruit_BME680 bme; // I2C configuration
 unsigned long bmeScan = 0;
 
 PubSubClient mqttClient(wifiClient);
-char* serverAddressMQTT = "broker.hivemq.com";
 
 // init global args with default parameters
 // TODO: add mqtt credentials
@@ -373,7 +372,8 @@ void setup()
     Serial.print("RFID tag reader ");
     mfrc522.PCD_DumpVersionToSerial();	// Show details of PCD - MFRC522 Card Reader details
 
-    sensorManager.addSensor(SensorRFID("nfcID", 500, &mfrc522));
+    SensorRFID sensor = SensorRFID("nfcID", 500, &mfrc522);
+    sensorManager.addSensor(&sensor);
 
     delay(50);
 }

@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include <PubSubClient.h>
-#include <SensorManager.h>
 
 #define DEFAILT_MQTT_PORT 1883
 

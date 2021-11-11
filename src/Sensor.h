@@ -8,7 +8,7 @@
 class Sensor {
 
     public:
-        String readValue();
+        virtual String readValue() = 0;
         Sensor(String, int);
         Sensor();
         String getName();

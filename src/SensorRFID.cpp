@@ -10,10 +10,12 @@ SensorRFID::SensorRFID(String name, int rate, MFRC522* board) : Sensor(name, rat
     mfrc522 = board;
     lastID = "";
     lastIDTime = 0;
+
 }
 
 String SensorRFID::readValue()
 {
+    Serial.println("reading nfc");
     if (!mfrc522->PICC_IsNewCardPresent() && 
     !millis() - lastScan > (unsigned long)sampleRate) // (false, if RFID tag/card is present ) PICC = Proximity Integrated Circuit Card
     {

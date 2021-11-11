@@ -10,7 +10,7 @@
 
 
 
-class CommunicationsManager;
+// class CommunicationsManager;
 class Sensor;
 class SensorRFID;
 
@@ -21,7 +21,7 @@ class SensorManager {
         SensorManager(CommunicationsManager*);
         SensorManager();
 
-        bool addSensor(Sensor);
+        bool addSensor(Sensor*);
         Sensor* getSensorByName(String);
         void publishSensors();
         void loop(); //handles communication and interval

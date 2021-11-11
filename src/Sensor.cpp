@@ -13,10 +13,13 @@ Sensor::Sensor()
     
 }
 
-String Sensor::readValue()
-{
-    return "";
-}
+
+// TODO this is the problem. sensor needs to be abstract
+// String Sensor::readValue()
+// {
+//     // Serial.println("error: abstract function is being called");
+//     return "";
+// }
 
 String Sensor::getName()
 {
