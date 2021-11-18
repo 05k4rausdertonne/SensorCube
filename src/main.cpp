@@ -19,16 +19,22 @@
 
 // library for accessing the mfrc522 ic
 #include <MFRC522.h>
+// define spi connection pins for the mfrc522 ic
+#define RST_PIN         D0 
+#define SS_PIN          D8 
 
 // library for accessing the BME680 sensor ic
 #include <Adafruit_Sensor.h>
 #include "Adafruit_BME680.h"
 
-// define spi connection pins
-#define RST_PIN         D0 
-#define SS_PIN          D8 
+// Library for controlling the ws2812b leds
+#include <FastLED.h>
+// define pin for led connection
+#define LED_PIN         D4
+#define NUM_LEDS        1
 
-// TODO C++ ist müll, der scheiß muss in einen file -_-
+// init led array
+CRGB leds [NUM_LEDS];
 
 // init Wifi
 WiFiClient wifiClient;
@@ -100,10 +106,10 @@ String readBME680(String type)
 
     String value; 
 
-    if(type ==  "temperature") value = (String)bme.temperature;
-    else if(type ==  "pressure") value = (String)bme.pressure;
-    else if(type ==  "humidity") value = (String)bme.humidity;
-    else if(type ==  "gas_resistance") value = (String)bme.gas_resistance;
+    if (type ==  "temperature") value = (String)bme.temperature;
+    else if (type ==  "pressure") value = (String)bme.pressure;
+    else if (type ==  "humidity") value = (String)bme.humidity;
+    else if (type ==  "gas_resistance") value = (String)bme.gas_resistance;
     
     return value;
 }
@@ -132,7 +138,7 @@ String readMFRC522(String type)
         if (mfrc522.PICC_IsNewCardPresent())  // (true, if RFID tag/card is present ) PICC = Proximity Integrated Circuit Card
         {
 
-            if(mfrc522.PICC_ReadCardSerial()) { // true, if RFID tag/card was read
+            if (mfrc522.PICC_ReadCardSerial()) { // true, if RFID tag/card was read
                 
                 for (byte i = 0; i < mfrc522.uid.size; ++i) { // read id (in parts)
                 
@@ -188,7 +194,7 @@ void loopSensors()
 {
     for (std::map<String, sensor>::iterator it = sensors.begin(); it != sensors.end(); it++)
     {
-        if(millis() - it->second.lastScanned > it->second.scanInterval)
+        if (millis() - it->second.lastScanned > it->second.scanInterval)
         {
             String value = it->second.readSensor(it->first);
             
@@ -213,32 +219,109 @@ void loopSensors()
 //
 // ---------------------------
 
-// struct actuatorValue
-// {
-//     String name;
-//     int current;
-//     int target;
-//     +
-// }
+struct actuatorValue
+{
+    int current;
+    int target;
+    unsigned int timeToTarget;
+    unsigned long lastUpdate;
+    
+};
 
-// struct actuator
-// {
-//     std::map<String, int>;
-//     String (*writeActuator)(String type);
-//     String lastValue;
-//     unsigned long lastNewValue;
-//     unsigned int bounceTime;
-// };
+struct actuator
+{
+    std::map<String, actuatorValue> values;
+    void (*writeActuator)(String valueName, int value);
+};
 
-// void initActuators()
-// {
+// factory functions for actuators
+actuator makeActuator(
+    String valueNames[], 
+    void (*writeActuator)(String valueName, int value)
+{
+    std::map<String, actuatorValue> newValues = {};
 
-// }
+    for (int i = 0; i < sizeof(valueNames); i++)
+    {
+        newValues.insert_or_assign(
+            valueNames[i],
+            (actuatorValue) {0, 0, 0, 0}
+        );
+    }
 
-// void loopActuators()
-// {
+    return {
+        newValues,
+        writeActuator
+    };
+}
 
-// }
+void writeLED(String valueName, int newValue)
+{
+    int index = valueName.remove(0,3).toInt();
+
+    if (valueName.startsWith("hue"))
+    {
+        leds[index] = CHSV(newValue, leds[index].s, leds[index].v);
+    }
+    
+    if (valueName.startsWith("sat"))
+    {
+        leds[index] = CHSV(leds[index].h, newValue,leds[index].v);
+    }
+
+    if (valueName.startsWith("val"))
+    {
+        leds[index] = CHSV(leds[index].h, leds[index].s, newValue);
+    }
+    
+    FastLED.show()
+}
+
+void initLED()
+{
+    FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
+    
+    for (int i = 0; i<NUM_LEDS, i++)
+    {
+        leds[i] = CHSV(0, 0, 0);
+    }
+}
+
+std::map<String, actuator> actuators =
+{
+
+}
+
+void initActuators()
+{
+    initLED();
+}
+
+void loopActuators()
+{
+    for (std::map<String, actuator>::iterator it = actuators.begin(); it != actuators.end(); it++)
+    {
+        // TODO
+        if ()
+
+        // if (millis() - it->second.lastScanned > it->second.scanInterval)
+        // {
+        //     String value = it->second.readSensor(it->first);
+            
+        //     if(value != it->second.lastValue
+        //         && millis() - it->second.lastNewValue > it->second.bounceTime)
+        //     {
+        //         publishSensor(value, it->first);
+
+        //         it->second.lastValue = value;
+        //         it->second.lastNewValue = millis();
+
+        //     }
+                
+        //     it->second.lastScanned = millis();
+        }
+    }    
+}
 
 
 // ---------------------------
