@@ -62,6 +62,10 @@ std::map<String, String> globalArgs = {
     {"sealevelpressure", "1013.25"}
 };
 
+// init global loop timer and time delta
+unsigned long lastLoop;
+unsigned int lastDelta;
+
 //--------------------
 //
 // sensor utils
@@ -176,42 +180,10 @@ std::map<String, sensor> sensors =
     {"humidity", makeSensor(10000, readBME680, 0)},
     {"gas_resistance", makeSensor(10000, readBME680, 0)},
     {"altitude", makeSensor(10000, readBME680, 0)},
-    {"nfcID", makeSensor(100, readMFRC522, 5000)}
+    {"nfc_id", makeSensor(100, readMFRC522, 5000)}
 };
 
-// init function for the sensors
-void initSensors()
-{
-    // call individual sensor inits here
-    initBME680();
-    initMFRC522();
-}
 
-
-
-// loop function for the sensors
-void loopSensors()
-{
-    for (std::map<String, sensor>::iterator it = sensors.begin(); it != sensors.end(); it++)
-    {
-        if (millis() - it->second.lastScanned > it->second.scanInterval)
-        {
-            String value = it->second.readSensor(it->first);
-            
-            if(value != it->second.lastValue
-                && millis() - it->second.lastNewValue > it->second.bounceTime)
-            {
-                publishSensor(value, it->first);
-
-                it->second.lastValue = value;
-                it->second.lastNewValue = millis();
-
-            }
-                
-            it->second.lastScanned = millis();
-        }
-    }
-}
 
 // ---------------------------
 //
@@ -223,21 +195,19 @@ struct actuatorValue
 {
     int current;
     int target;
-    unsigned int timeToTarget;
-    unsigned long lastUpdate;
-    
+    unsigned int timeToTarget;    
 };
 
 struct actuator
 {
     std::map<String, actuatorValue> values;
-    void (*writeActuator)(String valueName, int value);
+    void (*writeActuator)(std::map<String, actuator>::iterator actuatorRef);
 };
 
 // factory functions for actuators
 actuator makeActuator(
     String valueNames[], 
-    void (*writeActuator)(String valueName, int value)
+    void (*writeActuator)(std::map<String, actuator>::iterator actuatorRef))
 {
     std::map<String, actuatorValue> newValues = {};
 
@@ -245,7 +215,7 @@ actuator makeActuator(
     {
         newValues.insert_or_assign(
             valueNames[i],
-            (actuatorValue) {0, 0, 0, 0}
+            (actuatorValue) {0, 0, 0}
         );
     }
 
@@ -255,33 +225,22 @@ actuator makeActuator(
     };
 }
 
-void writeLED(String valueName, int newValue)
+void writeLED(std::map<String, actuator>::iterator actuatorRef)
 {
-    int index = valueName.remove(0,3).toInt();
+    unsigned int ledIndex = actuatorRef->first.substring(7).toInt();
 
-    if (valueName.startsWith("hue"))
-    {
-        leds[index] = CHSV(newValue, leds[index].s, leds[index].v);
-    }
+    leds[ledIndex] = CHSV(actuatorRef->second.values.find("hue")->second.current,
+        actuatorRef->second.values.find("sat")->second.current,
+        actuatorRef->second.values.find("val")->second.current);
     
-    if (valueName.startsWith("sat"))
-    {
-        leds[index] = CHSV(leds[index].h, newValue,leds[index].v);
-    }
-
-    if (valueName.startsWith("val"))
-    {
-        leds[index] = CHSV(leds[index].h, leds[index].s, newValue);
-    }
-    
-    FastLED.show()
+    FastLED.show();
 }
 
 void initLED()
 {
     FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
     
-    for (int i = 0; i<NUM_LEDS, i++)
+    for (int i = 0; i<NUM_LEDS; i++)
     {
         leds[i] = CHSV(0, 0, 0);
     }
@@ -290,39 +249,7 @@ void initLED()
 std::map<String, actuator> actuators =
 {
 
-}
-
-void initActuators()
-{
-    initLED();
-}
-
-void loopActuators()
-{
-    for (std::map<String, actuator>::iterator it = actuators.begin(); it != actuators.end(); it++)
-    {
-        // TODO
-        if ()
-
-        // if (millis() - it->second.lastScanned > it->second.scanInterval)
-        // {
-        //     String value = it->second.readSensor(it->first);
-            
-        //     if(value != it->second.lastValue
-        //         && millis() - it->second.lastNewValue > it->second.bounceTime)
-        //     {
-        //         publishSensor(value, it->first);
-
-        //         it->second.lastValue = value;
-        //         it->second.lastNewValue = millis();
-
-        //     }
-                
-        //     it->second.lastScanned = millis();
-        }
-    }    
-}
-
+};
 
 // ---------------------------
 //
@@ -495,7 +422,78 @@ void handleNotFound()
 
 
 
-//-------------------------------------------
+// ---------------------------
+//
+// init and loop functions
+//
+// ---------------------------
+
+// init function for the sensors
+void initSensors()
+{
+    // call individual sensor inits here
+    initBME680();
+    initMFRC522();
+}
+
+
+
+// loop function for the sensors
+void loopSensors()
+{
+    for (std::map<String, sensor>::iterator it = sensors.begin(); it != sensors.end(); it++)
+    {
+        if (millis() - it->second.lastScanned > it->second.scanInterval)
+        {
+            String value = it->second.readSensor(it->first);
+            
+            if(value != it->second.lastValue
+                && millis() - it->second.lastNewValue > it->second.bounceTime)
+            {
+                publishSensor(value, it->first);
+
+                it->second.lastValue = value;
+                it->second.lastNewValue = millis();
+
+            }
+                
+            it->second.lastScanned = millis();
+        }
+    }
+}
+
+void initActuators()
+{
+    initLED();
+}
+
+void loopActuators()
+{
+    for (std::map<String, actuator>::iterator actuatorRef = actuators.begin(); 
+        actuatorRef != actuators.end(); 
+        actuatorRef++)
+    {
+        for (std::map<String, actuatorValue>::iterator valueRef = actuatorRef->second.values.begin();
+            valueRef != actuatorRef->second.values.end();
+            valueRef)
+        {
+            if (valueRef->second.current != valueRef->second.target)
+            {
+                if (valueRef->second.timeToTarget < lastDelta)
+                {
+                    valueRef->second.current = valueRef->second.target;
+                }
+                else
+                {
+                    valueRef->second.current += 
+                        (valueRef->second.target - valueRef->second.current) / 
+                            (valueRef->second.timeToTarget / lastDelta);
+                }
+                actuatorRef->second.writeActuator(actuatorRef);
+            }
+        }
+    }
+}
 
 void initComms()
 {
@@ -565,6 +563,9 @@ void loop()
     loopSensors();
 
     loopActuators();
+    
+    lastDelta = millis() - lastLoop;
+    lastLoop = millis();
 }
 
 
