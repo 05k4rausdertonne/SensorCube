@@ -63,8 +63,8 @@ std::map<String, String> globalArgs = {
 };
 
 // init global loop timer and time delta
-unsigned long lastLoop;
-unsigned int lastDelta;
+unsigned long lastLoop = 0;
+unsigned int lastDelta = 1;
 
 //--------------------
 //
@@ -211,12 +211,13 @@ actuator makeActuator(
 {
     std::map<String, actuatorValue> newValues = {};
 
-    for (int i = 0; i < sizeof(valueNames); i++)
+    for (int i = 0; i < (sizeof(valueNames)-1); i++)
     {
         newValues.insert_or_assign(
             valueNames[i],
             (actuatorValue) {0, 0, 0}
         );
+        Serial.println(i);
     }
 
     return {
@@ -232,9 +233,20 @@ void writeLED(std::map<String, actuator>::iterator actuatorRef)
     leds[ledIndex] = CHSV(actuatorRef->second.values.find("hue")->second.current,
         actuatorRef->second.values.find("sat")->second.current,
         actuatorRef->second.values.find("val")->second.current);
-    
+
+    Serial.print(actuatorRef->second.values.find("hue")->second.current);
+    Serial.print(" ");
+    Serial.print(actuatorRef->second.values.find("sat")->second.current);
+    Serial.print(" ");
+    Serial.println(actuatorRef->second.values.find("val")->second.current);
+
     FastLED.show();
 }
+
+std::map<String, actuator> actuators =
+{
+    // {"led000", makeActuator({"hue", "sat", "val"}, writeLED)}
+};
 
 void initLED()
 {
@@ -243,13 +255,22 @@ void initLED()
     for (int i = 0; i<NUM_LEDS; i++)
     {
         leds[i] = CHSV(0, 0, 0);
+
+        String ledName = "led";
+        ledName.concat((String)(i % 1000));
+        ledName.concat((String)(i % 100));
+        ledName.concat((String)(i % 10));        
+
+        String valueNames[] = {"hue", "sat", "val"};
+        actuators.insert_or_assign(
+            ledName,
+            makeActuator(valueNames, writeLED));
+
+        Serial.println("added " + ledName);
+
+        FastLED.show();
     }
 }
-
-std::map<String, actuator> actuators =
-{
-
-};
 
 // ---------------------------
 //
@@ -264,7 +285,13 @@ void reconnectMQTT()
         // mqttClient.publish("outTopic69","hello world");
         Serial.println("reconnect successfull :)");
 
-        mqttClient.subscribe("inTopic69");
+        String subTopic = "actuator/+/";
+        subTopic.concat(globalArgs.find("location")->second);
+        subTopic.concat("/#");
+
+        mqttClient.subscribe(subTopic.c_str());
+
+        Serial.println("subscribed to topic: "+ subTopic);
     }
     else
     {
@@ -282,6 +309,7 @@ void setMQTTServer()
 
 void handleMessageMQTT(char* topic, byte* payload, unsigned int length)
 {
+    
     Serial.print("Message arrived [");
     Serial.print(topic);
     Serial.print("] ");
@@ -289,6 +317,44 @@ void handleMessageMQTT(char* topic, byte* payload, unsigned int length)
     Serial.print((char)payload[i]);
     }
     Serial.println();
+
+    String topicString = topic;
+    for (std::map<String, actuator>::iterator it = actuators.begin(); 
+        it != actuators.end(); 
+        it++)
+    {
+        if (topicString.startsWith("actuator/" + it->first))
+        {
+            for (std::map<String, actuatorValue>::iterator val = it->second.values.begin(); 
+                val != it->second.values.end(); 
+                val++)
+            {
+                if (topicString.endsWith(val->first))
+                {
+                    Serial.print("setting " + val->first + " at " + it->first);
+                
+                    StaticJsonDocument<64> doc;
+                    deserializeJson(doc, (char*)payload, length);
+
+                    if (doc.containsKey("value"))
+                    {
+                        Serial.print(" to " + (String)doc["value"]);
+                        val->second.target = doc["value"];
+
+                        if (doc.containsKey("time"))
+                        {
+                            Serial.print(" over " + (String)doc["time"] + " milliseconds");
+                            val->second.timeToTarget = doc["time"];
+                        }
+                    }
+
+                    Serial.println(".");
+                }
+            }
+        }
+    }
+
+    
 }
 
 bool publishSensor(String payload, String sensorType)
@@ -331,14 +397,18 @@ String serializeConfig()
         + sensors.size() * JSON_OBJECT_SIZE(2))
         + JSON_ARRAY_SIZE(1));
 
-    for (std::map<String, String>::iterator it = globalArgs.begin(); it != globalArgs.end(); it++)
+    for (std::map<String, String>::iterator it = globalArgs.begin(); 
+        it != globalArgs.end(); 
+        it++)
     {
         doc[it->first] = it->second;
     }
 
     doc.createNestedArray("sensors");
 
-    for (std::map<String, sensor>::iterator it = sensors.begin(); it != sensors.end(); it++)
+    for (std::map<String, sensor>::iterator it = sensors.begin(); 
+        it != sensors.end(); 
+        it++)
     {
         doc["sensors"][distance(sensors.begin(), it)]["type"] = it->first;
         doc["sensors"][distance(sensors.begin(), it)]["scanInterval"] = it->second.scanInterval;
@@ -414,6 +484,19 @@ void handleSensorRequest()
     }
 }
 
+// request callback for actuator values
+void handleActuatorRequest()
+{
+    if (server.method() != HTTP_POST) 
+    {
+        server.send (200, "text/json", serializeConfig());
+    }
+    else 
+    {        
+        server.send(200, "text/json", serializeConfig());
+    }
+}
+
 // callback for not found
 void handleNotFound()
 {
@@ -475,22 +558,27 @@ void loopActuators()
     {
         for (std::map<String, actuatorValue>::iterator valueRef = actuatorRef->second.values.begin();
             valueRef != actuatorRef->second.values.end();
-            valueRef)
+            valueRef++)
         {
             if (valueRef->second.current != valueRef->second.target)
             {
-                if (valueRef->second.timeToTarget < lastDelta)
-                {
-                    valueRef->second.current = valueRef->second.target;
-                }
-                else
+                // Serial.println((String)valueRef->second.current + " " + (String)valueRef->second.target);
+                if (valueRef->second.timeToTarget > lastDelta)
                 {
                     valueRef->second.current += 
                         (valueRef->second.target - valueRef->second.current) / 
                             (valueRef->second.timeToTarget / lastDelta);
                 }
+
+                else
+                {
+                    // Serial.println((String)valueRef->second.current);
+                    valueRef->second.current = valueRef->second.target;
+                }
+
                 actuatorRef->second.writeActuator(actuatorRef);
             }
+
         }
     }
 }
@@ -548,7 +636,10 @@ void setup()
 
     initActuators();
 
+    writeLED(actuators.find("led000"));
+
     delay(50);
+
 }
 
 // ---------------------------
@@ -564,8 +655,11 @@ void loop()
 
     loopActuators();
     
+    // TODO delta is way to short. find workaround!!
     lastDelta = millis() - lastLoop;
     lastLoop = millis();
+
+
 }
 
 
