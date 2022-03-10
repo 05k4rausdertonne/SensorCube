@@ -345,7 +345,7 @@ void initLED()
     
     for (int i = 0; i<NUM_LEDS; i++)
     {
-        leds[i] = CHSV(0, 255, 255);
+        leds[i] = CHSV(0, 0, 0);
 
         String ledName = "led";
         ledName.concat((String)(i % 1000));
