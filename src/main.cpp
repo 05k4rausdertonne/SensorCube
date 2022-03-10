@@ -26,6 +26,7 @@
 // library for accessing the BME680 sensor ic
 #include <Adafruit_Sensor.h>
 #include "Adafruit_BME680.h"
+#include "bsec.h"
 
 // Library for controlling the ws2812b leds
 #include <FastLED.h>
@@ -49,12 +50,13 @@ PubSubClient mqttClient(wifiClient);
 MFRC522 mfrc522(SS_PIN, RST_PIN);  
 
 // Create BME680 instance in I2C configuration
-Adafruit_BME680 bme; 
+Bsec iaqSensor;
+String lastBM680Measurement;
 
 // init global args with default parameters
 std::map<String, String> globalArgs = {
     {"location", "tbd"},
-    {"address", "broker.hivemq.com"},
+    {"address", "192.168.178.28"},
     {"port", "1883"},
     {"username", "tbd"},
     {"password", "tbd"},
@@ -82,40 +84,118 @@ struct sensor
     unsigned int bounceTime;
 };
 
+// Helper function definitions
+
+void errLeds(void)
+{
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+  delay(100);
+  digitalWrite(LED_BUILTIN, LOW);
+  delay(100);
+}
+
+void checkIaqSensorStatus(void)
+{
+    String output;
+    if (iaqSensor.status != BSEC_OK) {
+        if (iaqSensor.status < BSEC_OK) {
+        output = "BSEC error code : " + String(iaqSensor.status);
+        Serial.println(output);
+        for (;;)
+            errLeds(); /* Halt in case of failure */
+        } else {
+        output = "BSEC warning code : " + String(iaqSensor.status);
+        Serial.println(output);
+        }
+    }
+
+    if (iaqSensor.bme680Status != BME680_OK) {
+        if (iaqSensor.bme680Status < BME680_OK) {
+        output = "BME680 error code : " + String(iaqSensor.bme680Status);
+        Serial.println(output);
+        for (;;)
+            errLeds(); /* Halt in case of failure */
+        } else {
+        output = "BME680 warning code : " + String(iaqSensor.bme680Status);
+        Serial.println(output);
+        }
+    }
+}
+
+// bsec functions
+void initBSEC()
+{
+    Wire.begin();
+
+    iaqSensor.begin(BME680_I2C_ADDR_SECONDARY, Wire);
+    String output = "\nBSEC library version " + String(iaqSensor.version.major) + "." + String(iaqSensor.version.minor) + "." + String(iaqSensor.version.major_bugfix) + "." + String(iaqSensor.version.minor_bugfix);
+    Serial.println(output);
+    checkIaqSensorStatus();
+
+    bsec_virtual_sensor_t sensorList[10] = {
+        BSEC_OUTPUT_RAW_TEMPERATURE,
+        BSEC_OUTPUT_RAW_PRESSURE,
+        BSEC_OUTPUT_RAW_HUMIDITY,
+        BSEC_OUTPUT_RAW_GAS,
+        BSEC_OUTPUT_IAQ,
+        BSEC_OUTPUT_STATIC_IAQ,
+        BSEC_OUTPUT_CO2_EQUIVALENT,
+        BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
+        BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
+        BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
+    };
+
+    iaqSensor.updateSubscription(sensorList, 10, BSEC_SAMPLE_RATE_LP);
+    checkIaqSensorStatus();
+}
+
+String readBSEC(String type)
+{
+   
+    String output = ""; 
+
+    if (iaqSensor.run()) 
+    {
+        StaticJsonDocument<256> doc;
+
+        doc["temperature"] = (String)iaqSensor.temperature;
+        doc["pressure"] = (String)iaqSensor.pressure;
+        doc["humidity"] = (String)iaqSensor.humidity;
+        doc["gas_resistance"] = (String)iaqSensor.gasResistance;
+        doc["co2"] = (String)iaqSensor.co2Equivalent;
+        doc["iaq"] = (String)iaqSensor.staticIaq;
+        doc["breath_voc"] = (String)iaqSensor.breathVocEquivalent;
+
+        serializeJson(doc, output);
+
+    } else {
+        checkIaqSensorStatus();
+        // Serial.println("Failed to perform reading :(");
+        return "";
+    }
+
+    lastBM680Measurement = output;
+
+    return "";
+
+}
+
+
 // bme680 functions
 void initBME680()
 {
-    if (!bme.begin()) {
-    Serial.println("Could not find a valid BME680 sensor, check wiring!");
-    }
-
-    // Set up bme680 oversampling and filter initialization
-    bme.setTemperatureOversampling(BME680_OS_8X);
-    bme.setHumidityOversampling(BME680_OS_2X);
-    bme.setPressureOversampling(BME680_OS_4X);
-    bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
-    bme.setGasHeater(320, 150); // 320*C for 150 ms
+    
 }
 
 //callback function for collecting readings from bme680
 String readBME680(String type)
-{   
-    // make synchronous reading needs to be changed to async if that takes to long
-    // mb make all readings async?
-    if (! bme.performReading()) 
-    {
-        Serial.println("Failed to perform reading :(");
-        return "";
-    }
+{       
+    String output = lastBM680Measurement; 
 
-    String value; 
+    lastBM680Measurement = "";
 
-    if (type ==  "temperature") value = (String)bme.temperature;
-    else if (type ==  "pressure") value = (String)bme.pressure;
-    else if (type ==  "humidity") value = (String)bme.humidity;
-    else if (type ==  "gas_resistance") value = (String)bme.gas_resistance;
-    
-    return value;
+    return output;
 }
 
 // MFRC522 functions
@@ -137,7 +217,7 @@ String readMFRC522(String type)
 
     String value = "";
 
-    if(type == "nfcID")
+    if(type == "nfc")
     {
         if (mfrc522.PICC_IsNewCardPresent())  // (true, if RFID tag/card is present ) PICC = Proximity Integrated Circuit Card
         {
@@ -151,6 +231,19 @@ String readMFRC522(String type)
             }
         }
     } 
+
+    if (value == "")
+    {
+        return "";
+    }
+
+    StaticJsonDocument<128> doc;
+
+    doc["nfc_id"] = value;
+
+    value = "";
+
+    serializeJson(doc, value);
 
     return value;
 }
@@ -175,15 +268,10 @@ sensor makeSensor(
 // vector for storing sensors
 std::map<String, sensor> sensors =
 {
-    {"temperature", makeSensor(10000, readBME680, 0)},
-    {"pressure", makeSensor(10000, readBME680, 0)},
-    {"humidity", makeSensor(10000, readBME680, 0)},
-    {"gas_resistance", makeSensor(10000, readBME680, 0)},
-    {"altitude", makeSensor(10000, readBME680, 0)},
-    {"nfc_id", makeSensor(100, readMFRC522, 5000)}
+    {"bsec", makeSensor(100, readBSEC, 0)},
+    {"bme680", makeSensor(10000, readBME680, 0)},
+    {"nfc", makeSensor(100, readMFRC522, 2000)}
 };
-
-
 
 // ---------------------------
 //
@@ -201,13 +289,13 @@ struct actuatorValue
 struct actuator
 {
     std::map<String, actuatorValue> values;
-    void (*writeActuator)(std::map<String, actuator>::iterator actuatorRef);
+    void (*writeActuator)(String actuatorName);
 };
 
 // factory functions for actuators
 actuator makeActuator(
     String valueNames[], 
-    void (*writeActuator)(std::map<String, actuator>::iterator actuatorRef))
+    void (*writeActuator)(String actuatorName))
 {
     std::map<String, actuatorValue> newValues = {};
 
@@ -226,27 +314,30 @@ actuator makeActuator(
     };
 }
 
-void writeLED(std::map<String, actuator>::iterator actuatorRef)
+std::map<String, actuator> actuators = {};
+
+
+void writeLED(String ledName)
 {
-    unsigned int ledIndex = actuatorRef->first.substring(7).toInt();
 
-    leds[ledIndex] = CHSV(actuatorRef->second.values.find("hue")->second.current,
-        actuatorRef->second.values.find("sat")->second.current,
-        actuatorRef->second.values.find("val")->second.current);
+    unsigned int ledIndex = ledName.substring(7).toInt();
+    
+    Serial.println(ledIndex);
 
-    Serial.print(actuatorRef->second.values.find("hue")->second.current);
+    leds[ledIndex] = CHSV(
+        actuators.find(ledName)->second.values.find("hue")->second.current,
+        actuators.find(ledName)->second.values.find("sat")->second.current,
+        actuators.find(ledName)->second.values.find("val")->second.current
+        );
+
+    Serial.print(actuators.find(ledName)->second.values.find("hue")->second.current);
     Serial.print(" ");
-    Serial.print(actuatorRef->second.values.find("sat")->second.current);
+    Serial.print(actuators.find(ledName)->second.values.find("sat")->second.current);
     Serial.print(" ");
-    Serial.println(actuatorRef->second.values.find("val")->second.current);
+    Serial.println(actuators.find(ledName)->second.values.find("val")->second.current);
 
-    FastLED.show();
+    // FastLED.show();
 }
-
-std::map<String, actuator> actuators =
-{
-    // {"led000", makeActuator({"hue", "sat", "val"}, writeLED)}
-};
 
 void initLED()
 {
@@ -254,7 +345,7 @@ void initLED()
     
     for (int i = 0; i<NUM_LEDS; i++)
     {
-        leds[i] = CHSV(0, 0, 0);
+        leds[i] = CHSV(0, 255, 255);
 
         String ledName = "led";
         ledName.concat((String)(i % 1000));
@@ -280,7 +371,7 @@ void initLED()
 void reconnectMQTT()
 {   
     Serial.println("attempting reconnect to MQTT broker..");
-    if (mqttClient.connect((char*)WiFi.macAddress().c_str()))
+    if (mqttClient.connect((char*)WiFi.macAddress().c_str(), NULL, NULL))
     {
         // mqttClient.publish("outTopic69","hello world");
         Serial.println("reconnect successfull :)");
@@ -295,7 +386,8 @@ void reconnectMQTT()
     }
     else
     {
-        Serial.println("reconnect failed :(");
+        Serial.print("reconnect failed: ");
+        Serial.println(mqttClient.state());
     }
 }
 
@@ -303,7 +395,8 @@ void setMQTTServer()
 {
     mqttClient.disconnect();
 
-    mqttClient.setServer(globalArgs.find("address")->second.c_str(), 1883);
+    mqttClient.setServer(globalArgs.find("address")->second.c_str(), 
+        (int)globalArgs.find("port")->second.c_str());
                 
 }
 
@@ -323,38 +416,41 @@ void handleMessageMQTT(char* topic, byte* payload, unsigned int length)
         it != actuators.end(); 
         it++)
     {
-        if (topicString.startsWith("actuator/" + it->first))
+        if (topicString.startsWith("actuator/" + it->first + "/"))
         {
+            
+                
+            StaticJsonDocument<128> doc;
+            deserializeJson(doc, (char*)payload, length);
+
             for (std::map<String, actuatorValue>::iterator val = it->second.values.begin(); 
                 val != it->second.values.end(); 
                 val++)
             {
-                if (topicString.endsWith(val->first))
+                if (doc.containsKey(val->first))
                 {
                     Serial.print("setting " + val->first + " at " + it->first);
-                
-                    StaticJsonDocument<64> doc;
-                    deserializeJson(doc, (char*)payload, length);
-
-                    if (doc.containsKey("value"))
+                    
+                    if (doc[val->first].containsKey("value"))
                     {
-                        Serial.print(" to " + (String)doc["value"]);
-                        val->second.target = doc["value"];
+                        Serial.print(" to " + (String)doc[val->first]["value"]);
+                        val->second.target = (int)doc[val->first]["value"];
 
-                        if (doc.containsKey("time"))
+                        if (doc[val->first].containsKey("time"))
                         {
-                            Serial.print(" over " + (String)doc["time"] + " milliseconds");
-                            val->second.timeToTarget = doc["time"];
+                            Serial.print(" over " + (String)doc[val->first]["time"] + " milliseconds");
+                            val->second.timeToTarget = (int)doc[val->first]["time"];
                         }
+                    } else
+                    {
+                        Serial.print(" not");
                     }
 
                     Serial.println(".");
                 }
             }
         }
-    }
-
-    
+    }    
 }
 
 bool publishSensor(String payload, String sensorType)
@@ -395,7 +491,8 @@ String serializeConfig()
     DynamicJsonDocument doc(JSON_OBJECT_SIZE(globalArgs.size() 
         + JSON_ARRAY_SIZE(sensors.size())
         + sensors.size() * JSON_OBJECT_SIZE(2))
-        + JSON_ARRAY_SIZE(1));
+        +JSON_ARRAY_SIZE(actuators.size())
+        + actuators.size() * (JSON_ARRAY_SIZE(4) + JSON_OBJECT_SIZE(7)));
 
     for (std::map<String, String>::iterator it = globalArgs.begin(); 
         it != globalArgs.end(); 
@@ -410,11 +507,33 @@ String serializeConfig()
         it != sensors.end(); 
         it++)
     {
-        doc["sensors"][distance(sensors.begin(), it)]["type"] = it->first;
-        doc["sensors"][distance(sensors.begin(), it)]["scanInterval"] = it->second.scanInterval;
+        if(doc["sensors"][distance(sensors.begin(), it)]["type"] != "bsec")
+        {
+            doc["sensors"][distance(sensors.begin(), it)]["type"] = it->first;
+            doc["sensors"][distance(sensors.begin(), it)]["scanInterval"] = it->second.scanInterval;
+        }
     }
 
     doc.createNestedArray("actuators");
+
+    for (std::map<String, actuator>::iterator actuatorIt = actuators.begin(); 
+        actuatorIt != actuators.end(); 
+        actuatorIt++)
+    {
+        JsonObject actuatorObj = doc["actuators"].createNestedObject();
+
+        actuatorObj["name"] = actuatorIt->first;
+        actuatorObj.createNestedArray("values");
+
+        for (std::map<String, actuatorValue>::iterator valueIt = 
+        actuatorIt->second.values.begin(); 
+        valueIt != 
+        actuatorIt->second.values.end(); 
+        valueIt++)
+        {
+            actuatorObj["values"][distance(actuatorIt->second.values.begin(), valueIt)] = valueIt->first;
+        }
+    }
 
     String response;
 
@@ -515,6 +634,7 @@ void handleNotFound()
 void initSensors()
 {
     // call individual sensor inits here
+    initBSEC();
     initBME680();
     initMFRC522();
 }
@@ -576,11 +696,13 @@ void loopActuators()
                     valueRef->second.current = valueRef->second.target;
                 }
 
-                actuatorRef->second.writeActuator(actuatorRef);
+                actuatorRef->second.writeActuator(actuatorRef->first);
             }
 
         }
     }
+
+    FastLED.show();
 }
 
 void initComms()
@@ -636,8 +758,6 @@ void setup()
 
     initActuators();
 
-    writeLED(actuators.find("led000"));
-
     delay(50);
 
 }
@@ -658,8 +778,6 @@ void loop()
     // TODO delta is way to short. find workaround!!
     lastDelta = millis() - lastLoop;
     lastLoop = millis();
-
-
 }
 
 
