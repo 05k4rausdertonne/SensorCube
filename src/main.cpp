@@ -29,13 +29,14 @@
 #include "bsec.h"
 
 // Library for controlling the ws2812b leds
-#include <FastLED.h>
+#include <NeoPixelBus.h>
+
 // define pin for led connection
 #define LED_PIN         D4
 #define NUM_LEDS        1
 
 // init led array
-CRGB leds [NUM_LEDS];
+NeoPixelBus<NeoGrbFeature, Neo800KbpsMethod> leds(NUM_LEDS, LED_PIN);
 
 // init Wifi
 WiFiClient wifiClient;
@@ -56,7 +57,7 @@ String lastBM680Measurement;
 // init global args with default parameters
 std::map<String, String> globalArgs = {
     {"location", "tbd"},
-    {"address", "192.168.178.28"},
+    {"address", "broker.hivemq.com"}, //192.168.178.28
     {"port", "1883"},
     {"username", "tbd"},
     {"password", "tbd"},
@@ -316,36 +317,26 @@ actuator makeActuator(
 
 std::map<String, actuator> actuators = {};
 
-
 void writeLED(String ledName)
 {
-
     unsigned int ledIndex = ledName.substring(7).toInt();
     
     Serial.println(ledIndex);
 
-    leds[ledIndex] = CHSV(
-        actuators.find(ledName)->second.values.find("hue")->second.current,
-        actuators.find(ledName)->second.values.find("sat")->second.current,
-        actuators.find(ledName)->second.values.find("val")->second.current
-        );
-
-    Serial.print(actuators.find(ledName)->second.values.find("hue")->second.current);
-    Serial.print(" ");
-    Serial.print(actuators.find(ledName)->second.values.find("sat")->second.current);
-    Serial.print(" ");
-    Serial.println(actuators.find(ledName)->second.values.find("val")->second.current);
-
-    // FastLED.show();
+    leds.SetPixelColor(ledIndex, HslColor(
+        (float)actuators.find(ledName)->second.values.find("hue")->second.current / 256.0,
+        (float)actuators.find(ledName)->second.values.find("sat")->second.current / 256.0,
+        (float)actuators.find(ledName)->second.values.find("val")->second.current / 256.0
+        ));
 }
 
 void initLED()
 {
-    FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS);
+    leds.Begin();
     
     for (int i = 0; i<NUM_LEDS; i++)
     {
-        leds[i] = CHSV(0, 0, 0);
+        leds.SetPixelColor(i, RgbColor(0,0,0));
 
         String ledName = "led";
         ledName.concat((String)(i % 1000));
@@ -359,7 +350,7 @@ void initLED()
 
         Serial.println("added " + ledName);
 
-        FastLED.show();
+        writeLED(ledName);
     }
 }
 
@@ -371,7 +362,7 @@ void initLED()
 void reconnectMQTT()
 {   
     Serial.println("attempting reconnect to MQTT broker..");
-    if (mqttClient.connect((char*)WiFi.macAddress().c_str(), NULL, NULL))
+    if (mqttClient.connect((char*)WiFi.macAddress().c_str()))
     {
         // mqttClient.publish("outTopic69","hello world");
         Serial.println("reconnect successfull :)");
@@ -395,8 +386,12 @@ void setMQTTServer()
 {
     mqttClient.disconnect();
 
+    Serial.print(globalArgs.find("address")->second.c_str());
+    Serial.print(":");
+    Serial.println((int)globalArgs.find("port")->second.c_str());
+
     mqttClient.setServer(globalArgs.find("address")->second.c_str(), 
-        (int)globalArgs.find("port")->second.c_str());
+        globalArgs.find("port")->second.toInt());
                 
 }
 
@@ -420,7 +415,7 @@ void handleMessageMQTT(char* topic, byte* payload, unsigned int length)
         {
             
                 
-            StaticJsonDocument<128> doc;
+            StaticJsonDocument<512> doc;
             deserializeJson(doc, (char*)payload, length);
 
             for (std::map<String, actuatorValue>::iterator val = it->second.values.begin(); 
@@ -450,7 +445,7 @@ void handleMessageMQTT(char* topic, byte* payload, unsigned int length)
                 }
             }
         }
-    }    
+    }
 }
 
 bool publishSensor(String payload, String sensorType)
@@ -522,7 +517,7 @@ String serializeConfig()
     {
         JsonObject actuatorObj = doc["actuators"].createNestedObject();
 
-        actuatorObj["name"] = actuatorIt->first;
+        actuatorObj["type"] = actuatorIt->first;
         actuatorObj.createNestedArray("values");
 
         for (std::map<String, actuatorValue>::iterator valueIt = 
@@ -695,14 +690,14 @@ void loopActuators()
                     // Serial.println((String)valueRef->second.current);
                     valueRef->second.current = valueRef->second.target;
                 }
-
+                
                 actuatorRef->second.writeActuator(actuatorRef->first);
             }
 
         }
     }
 
-    FastLED.show();
+    
 }
 
 void initComms()
@@ -719,9 +714,11 @@ void initComms()
 
     // configure mqtt connection
     mqttClient.setCallback(handleMessageMQTT);
-    mqttClient.setServer(
-        globalArgs.find("address")->second.c_str(), 
-        globalArgs.find("port")->second.toInt());
+    // mqttClient.setServer(
+    //     globalArgs.find("address")->second.c_str(), 
+    //     globalArgs.find("port")->second.toInt());
+
+    setMQTTServer();
 
     server.on("/", handleRootRequest);
     server.on("/sensor", handleSensorRequest);
@@ -778,6 +775,11 @@ void loop()
     // TODO delta is way to short. find workaround!!
     lastDelta = millis() - lastLoop;
     lastLoop = millis();
+
+    
+    leds.Show();
+
+    delay(2);
 }
 
 
