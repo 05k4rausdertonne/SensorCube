@@ -306,7 +306,6 @@ actuator makeActuator(
             valueNames[i],
             (actuatorValue) {0, 0, 0}
         );
-        Serial.println(i);
     }
 
     return {
@@ -320,8 +319,6 @@ std::map<String, actuator> actuators = {};
 void writeLED(String ledName)
 {
     unsigned int ledIndex = ledName.substring(7).toInt();
-    
-    Serial.println(ledIndex);
 
     leds.SetPixelColor(ledIndex, HslColor(
         (float)actuators.find(ledName)->second.values.find("hue")->second.current / 256.0,
@@ -690,7 +687,7 @@ void loopActuators()
                     // Serial.println((String)valueRef->second.current);
                     valueRef->second.current = valueRef->second.target;
                 }
-                
+
                 actuatorRef->second.writeActuator(actuatorRef->first);
             }
 
