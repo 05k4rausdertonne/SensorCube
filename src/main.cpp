@@ -320,10 +320,10 @@ void writeLED(String ledName)
 {
     unsigned int ledIndex = ledName.substring(7).toInt();
 
-    leds.SetPixelColor(ledIndex, HslColor(
-        (float)actuators.find(ledName)->second.values.find("hue")->second.current / 256.0,
-        (float)actuators.find(ledName)->second.values.find("sat")->second.current / 256.0,
-        (float)actuators.find(ledName)->second.values.find("val")->second.current / 256.0
+    leds.SetPixelColor(ledIndex, HsbColor(
+        (float)actuators.find(ledName)->second.values.find("hue")->second.current / 255.0,
+        (float)actuators.find(ledName)->second.values.find("sat")->second.current / 255.0,
+        (float)actuators.find(ledName)->second.values.find("val")->second.current / 255.0
         ));
 }
 
@@ -365,6 +365,8 @@ void reconnectMQTT()
         Serial.println("reconnect successfull :)");
 
         String subTopic = "actuator/+/";
+        subTopic.concat(globalArgs.find("uuid")->second);
+        subTopic.concat("/");
         subTopic.concat(globalArgs.find("location")->second);
         subTopic.concat("/#");
 
@@ -419,25 +421,19 @@ void handleMessageMQTT(char* topic, byte* payload, unsigned int length)
                 val != it->second.values.end(); 
                 val++)
             {
-                if (doc.containsKey(val->first))
+                if (doc.containsKey("value") && doc["value"].containsKey(val->first))
                 {
                     Serial.print("setting " + val->first + " at " + it->first);
-                    
-                    if (doc[val->first].containsKey("value"))
-                    {
-                        Serial.print(" to " + (String)doc[val->first]["value"]);
-                        val->second.target = (int)doc[val->first]["value"];
 
-                        if (doc[val->first].containsKey("time"))
-                        {
-                            Serial.print(" over " + (String)doc[val->first]["time"] + " milliseconds");
-                            val->second.timeToTarget = (int)doc[val->first]["time"];
-                        }
-                    } else
+                    Serial.print(" to " + (String)doc["value"][val->first]);
+                    val->second.target = (int)doc["value"][val->first];
+
+                    if (doc.containsKey("time"))
                     {
-                        Serial.print(" not");
+                        Serial.print(" over " + (String)doc["time"] + " milliseconds");
+                        val->second.timeToTarget = (int)doc["time"];
                     }
-
+                    
                     Serial.println(".");
                 }
             }
