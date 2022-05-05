@@ -57,8 +57,8 @@ String lastBM680Measurement;
 // init global args with default parameters
 std::map<String, String> globalArgs = {
     {"location", "tbd"},
-    {"address", "broker.hivemq.com"}, //192.168.178.28
-    {"port", "1883"},
+    {"address", "cubekit.inf.tu-dresden.de"}, //cubekit.inf.tu-dresden.de
+    {"port", "1884"},
     {"username", "tbd"},
     {"password", "tbd"},
     {"uuid", "tbd"},
@@ -512,7 +512,6 @@ String serializeConfig()
 
         actuatorObj["type"] = actuatorIt->first;
         actuatorObj.createNestedArray("values");
-
         for (std::map<String, actuatorValue>::iterator valueIt = 
         actuatorIt->second.values.begin(); 
         valueIt != 
